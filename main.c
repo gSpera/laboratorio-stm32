@@ -23,6 +23,10 @@
 #define ADC_CFGR 0x0C
 #define ADC_DR 0x40
 
+//ADCCx, x=12,34
+#define ADCC12_BASE (ADC1_BASE + 0x300)
+#define ADCC_CCR 0x8
+
 #define SYS_CLK 8000000  // 8MHz
 
 int leds = 0;
@@ -59,7 +63,7 @@ int main() {
     ptr = (unsigned int *)(TIM6_BASE + TIM_CR1);
     // *ptr |= (1 << 0);
 
-    // Moder
+   // Moder
     ptr = (unsigned int *)(GPIOE_BASE + GPIO_MODER);
     *ptr |= 0x5555 << 16;
     volatile unsigned int *status =
@@ -68,9 +72,11 @@ int main() {
 
     // ADC
     // Step 1: Voltage Regulator
+    ptr = (volatile unsigned int *)(ADCC12_BASE + ADCC_CCR);
+    *ptr |= 0b01 << 16;
     ptr = (volatile unsigned int *)(ADC1_BASE + ADC_CR);
     *ptr &= ~(0b11 << 28);  // ADVREGEN = 0b00
-    *ptr |= 0b11 << 28;     // ADVREGEN = 0b10
+    *ptr |= 0b10 << 28;     // ADVREGEN = 0b10
 
     // Wait 10us
     // At 8MHz, 1 clock is 125ns,
@@ -107,7 +113,7 @@ int main() {
     // Temperature Sensor, ADC1_IN16
     // Sequence
     ptr = (unsigned int *)(ADC1_BASE + ADC_SQR1);
-    *ptr = (16 << 4) | (1 << 0);  // SQ1 = ADC1_IN16, L = 1
+    *ptr = (16 << 4) | (0 << 0);  // SQ1 = ADC1_IN16, L = 1
     ptr = (unsigned int *)(ADC1_BASE + ADC_CFGR);
     *ptr |= (0b10 << 3);  // 8bit
 
