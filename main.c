@@ -1,3 +1,4 @@
+#define GPIOA_BASE 0x4800000
 #define GPIOE_BASE 0x48001000
 #define GPIO_MODER 0
 #define GPIO_ODR 0x14
@@ -22,8 +23,9 @@
 #define ADC_SQR1 0x30
 #define ADC_CFGR 0x0C
 #define ADC_DR 0x40
+#define ADC_SMPR1 0x14
 
-//ADCCx, x=12,34
+// ADCCx, x=12,34
 #define ADCC12_BASE (ADC1_BASE + 0x300)
 #define ADCC_CCR 0x8
 
@@ -31,17 +33,14 @@
 
 int leds = 0;
 void isr_tim6dacunder() {
-    unsigned int *ptr = (unsigned int *)(GPIOE_BASE + GPIO_ODR);
-    leds ^= 0xFF << 8;
-    *ptr = leds;
-    ptr = (unsigned int *)(TIM6_BASE + TIM_SR);
+    unsigned int *ptr = (unsigned int *)(TIM6_BASE + TIM_SR);
     *ptr = 0;
 }
 
 int main() {
     // Clock
     volatile unsigned int *ptr = (unsigned int *)(RCC_BASE + RCC_AHBENR);
-    *ptr |= (1 << 21) | (1 << 28);  // GPIOE | ADC12
+    *ptr |= (1 << 17) | (1 << 21) | (1 << 28);  // GPIOA | GPIOE | ADC12
     ptr = (unsigned int *)(RCC_BASE + RCC_APB1ENR);
     *ptr |= 1 << 4;
     ptr = (unsigned int *)(RCC_BASE + RCC_CFGR2);
@@ -55,28 +54,25 @@ int main() {
     ptr = (unsigned int *)(TIM6_BASE + TIM_PSC);
     *ptr = 8000 - 1;  // 8MHz / 8k = 1kHz
     ptr = (unsigned int *)(TIM6_BASE + TIM_ARR);
-    *ptr = 2000;
+    *ptr = 1000;
     ptr = (unsigned int *)(TIM6_BASE + TIM_CNT);
     *ptr = 0;
     ptr = (unsigned int *)(TIM6_BASE + TIM_DIER);
     *ptr = 1;
-    ptr = (unsigned int *)(TIM6_BASE + TIM_CR1);
-    // *ptr |= (1 << 0);
 
-   // Moder
+    // Moder
     ptr = (unsigned int *)(GPIOE_BASE + GPIO_MODER);
     *ptr |= 0x5555 << 16;
-    volatile unsigned int *status =
-        (volatile unsigned int *)(TIM6_BASE + TIM_SR);
-    ptr = (volatile unsigned int *)(GPIOE_BASE + GPIO_ODR);
+    // ptr = (unsigned int *)(GPIOA_BASE + GPIO_MODER);
+    // *ptr |= 0b11 << 0;
 
     // ADC
     // Step 1: Voltage Regulator
     ptr = (volatile unsigned int *)(ADCC12_BASE + ADCC_CCR);
-    *ptr |= 0b01 << 16;
+    *ptr |= 0b01 << 16;  // CKMODE = 01
     ptr = (volatile unsigned int *)(ADC1_BASE + ADC_CR);
     *ptr &= ~(0b11 << 28);  // ADVREGEN = 0b00
-    *ptr |= 0b10 << 28;     // ADVREGEN = 0b10
+    *ptr |= 0b01 << 28;     // ADVREGEN = 0b10
 
     // Wait 10us
     // At 8MHz, 1 clock is 125ns,
@@ -113,26 +109,33 @@ int main() {
     // Temperature Sensor, ADC1_IN16
     // Sequence
     ptr = (unsigned int *)(ADC1_BASE + ADC_SQR1);
-    *ptr = (16 << 4) | (0 << 0);  // SQ1 = ADC1_IN16, L = 1
+    *ptr = (1 << 6) | (0 << 0);  // SQ1 = ADC1_IN1, L = 1
+    ptr = (unsigned int *)(ADC1_BASE + ADC_SMPR1);
+    *ptr = 0b101 << 3;
     ptr = (unsigned int *)(ADC1_BASE + ADC_CFGR);
     *ptr |= (0b10 << 3);  // 8bit
 
-    // Step 5: Start ADC
-    ptr = (unsigned int *)(ADC1_BASE + ADC_CR);
-    *ptr |= 0b1 << 2;
+    ptr = (unsigned int *)(TIM6_BASE + TIM_CR1);
+    *ptr |= (1 << 0);
 
-    // Wait for finish
-    ptr = (volatile unsigned int *)(ADC1_BASE + ADC_ISR);
     for (;;) {
-        int eoc = (*ptr >> 2) & 0b1;
-        if (eoc == 1) break;
+        // Step 5: Start ADC
+        ptr = (unsigned int *)(ADC1_BASE + ADC_CR);
+        *ptr |= 0b1 << 2;
+
+        // Wait for finish
+        ptr = (volatile unsigned int *)(ADC1_BASE + ADC_ISR);
+        for (;;) {
+            int eoc = (*ptr >> 2) & 0b1;
+            if (eoc == 1) break;
+        }
+
+        ptr = (unsigned int *)(ADC1_BASE + ADC_DR);
+        int value = *ptr;
+
+        ptr = (unsigned int *)(GPIOE_BASE + GPIO_ODR);
+        *ptr = value << 8;
     }
-
-    ptr = (unsigned int *)(ADC1_BASE + ADC_DR);
-    int value = *ptr;
-
-    ptr = (unsigned int *)(GPIOE_BASE + GPIO_ODR);
-    *ptr |= value << 8;
 
     while (1)
         ;
