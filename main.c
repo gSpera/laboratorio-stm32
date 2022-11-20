@@ -69,7 +69,7 @@ int main() {
     // ADC
     // Step 1: Voltage Regulator
     ptr = (volatile unsigned int *)(ADCC12_BASE + ADCC_CCR);
-    *ptr |= 0b01 << 16;  // CKMODE = 01
+    *ptr |= (1 << 23) | (0b01 << 16);  // TSEN | CKMODE = 01
     ptr = (volatile unsigned int *)(ADC1_BASE + ADC_CR);
     *ptr &= ~(0b11 << 28);  // ADVREGEN = 0b00
     *ptr |= 0b01 << 28;     // ADVREGEN = 0b10
@@ -109,11 +109,11 @@ int main() {
     // Temperature Sensor, ADC1_IN16
     // Sequence
     ptr = (unsigned int *)(ADC1_BASE + ADC_SQR1);
-    *ptr = (1 << 6) | (0 << 0);  // SQ1 = ADC1_IN1, L = 1
+    *ptr = (16 << 6) | (0 << 0);  // SQ1 = ADC1_IN16, L = 1
     ptr = (unsigned int *)(ADC1_BASE + ADC_SMPR1);
     *ptr = 0b101 << 3;
     ptr = (unsigned int *)(ADC1_BASE + ADC_CFGR);
-    *ptr |= (0b10 << 3);  // 8bit
+    *ptr |= (0b00 << 3);  // 12bit
 
     ptr = (unsigned int *)(TIM6_BASE + TIM_CR1);
     *ptr |= (1 << 0);
@@ -133,8 +133,17 @@ int main() {
         ptr = (unsigned int *)(ADC1_BASE + ADC_DR);
         int value = *ptr;
 
+        float v2i = 3.0 / 4096;
+        // Should it be 1000??
+        value = (1.43 - value * v2i) * 100 / 4.3 + 25;
+
         ptr = (unsigned int *)(GPIOE_BASE + GPIO_ODR);
         *ptr = value << 8;
+
+        ptr = (unsigned int *)(TIM6_BASE + TIM_SR);
+        while ((*ptr) == 0)
+            ;
+        *ptr = 0;
     }
 
     while (1)

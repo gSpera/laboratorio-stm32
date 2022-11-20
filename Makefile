@@ -1,5 +1,6 @@
 ARM:=arm-none-eabi
 CFLAGS:=-O2 -g -mthumb -I Libreria
+LDFLAGS:= /usr/lib/gcc/arm-none-eabi/12.2.0/thumb/v6-m/nofp/libgcc.a
 OBJS:=main.o vector_table.o
 
 all: out.bin out.lis
@@ -11,7 +12,7 @@ out.lis: out.elf
 	$(ARM)-objdump -S $< > $@
 
 out.elf: $(OBJS)
-	$(ARM)-ld -o $@ -T linker.ld $(OBJS)
+	$(ARM)-ld -o $@ -T linker.ld $(OBJS) $(LDFLAGS) 
 
 %.o: %.s
 	$(ARM)-as -o $@ -c $< 
