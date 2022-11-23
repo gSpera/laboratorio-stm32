@@ -1,4 +1,4 @@
-#define GPIOA_BASE 0x4800000
+#define GPIOA_BASE 0x48000000
 #define GPIOE_BASE 0x48001000
 #define GPIO_MODER 0
 #define GPIO_ODR 0x14
@@ -63,8 +63,8 @@ int main() {
     // Moder
     ptr = (unsigned int *)(GPIOE_BASE + GPIO_MODER);
     *ptr |= 0x5555 << 16;
-    // ptr = (unsigned int *)(GPIOA_BASE + GPIO_MODER);
-    // *ptr |= 0b11 << 0;
+    ptr = (unsigned int *)(GPIOA_BASE + GPIO_MODER);
+    *ptr |= 0;
 
     // ADC
     // Step 1: Voltage Regulator
