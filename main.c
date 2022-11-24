@@ -1,3 +1,5 @@
+#define REG(ADDR) (*(volatile unsigned int *)(ADDR))
+
 #define GPIOA_BASE 0x48000000
 #define GPIOE_BASE 0x48001000
 #define GPIO_MODER 0
@@ -31,119 +33,74 @@
 
 #define SYS_CLK 8000000  // 8MHz
 
-int leds = 0;
-void isr_tim6dacunder() {
-    unsigned int *ptr = (unsigned int *)(TIM6_BASE + TIM_SR);
-    *ptr = 0;
+void isr_tim6dacunder() {}
+
+#define BUFFER_SIZE 256
+int buffer[BUFFER_SIZE];
+#define PI 3.1415
+
+#define SIN(t) \
+    (t - (t * t * t) / (3 * 2) + (t * t * t * t * t) / (5 * 4 * 3 * 2))
+
+float f(float t) {
+    if (t <= BUFFER_SIZE / 4) {
+        float x = t / BUFFER_SIZE * 2 * PI;
+        return SIN(x);
+    }
+    if (t <= BUFFER_SIZE / 2) {
+        return f(BUFFER_SIZE / 4 - (t - BUFFER_SIZE / 4));
+    }
+
+    return -f(BUFFER_SIZE / 2 - (t - BUFFER_SIZE / 2));
 }
 
+void generate_buffer() {
+    for (int i = 0; i < BUFFER_SIZE; i++) {
+        buffer[i] = ((f((float)i) + 1) / 2) * 4096;
+        if (buffer[i] > 4095) buffer[i] = 4095;
+        if (buffer[i] < 0) buffer[i] = 0;
+    }
+}
+
+int freq = 1000;  // 1kHz
+
+extern unsigned int DATA_START;
+extern unsigned int DATA_END;
+extern unsigned int DATA_LOAD_ADDR;
+
 int main() {
+    // Copy .data from flash to ram
+    for (unsigned int addr = DATA_START; addr < DATA_END; addr++) {
+        unsigned int *ptr = (unsigned int *)(DATA_LOAD_ADDR + addr);
+        *ptr = *(unsigned int *)addr;
+    }
+
+    generate_buffer();
+
     // Clock
-    volatile unsigned int *ptr = (unsigned int *)(RCC_BASE + RCC_AHBENR);
-    *ptr |= (1 << 17) | (1 << 21) | (1 << 28);  // GPIOA | GPIOE | ADC12
-    ptr = (unsigned int *)(RCC_BASE + RCC_APB1ENR);
-    *ptr |= 1 << 4;
-    ptr = (unsigned int *)(RCC_BASE + RCC_CFGR2);
-    *ptr |= 0b10000 << 4;  // PLL / 1
+    REG(RCC_BASE | RCC_AHBENR) |= 1 << 21;
+    REG(RCC_BASE | RCC_APB1ENR) |= 1 << 4;
 
-    // NVIC
-    ptr = (unsigned int *)NVIC_BASE + NVIC_ISER;
-    ptr[1] = 1 << 22;  // 54
+    // GPIO
+    REG(GPIOE_BASE | GPIO_MODER) |= 0x5555 << 16;
 
-    // TIM6
-    ptr = (unsigned int *)(TIM6_BASE + TIM_PSC);
-    *ptr = 8000 - 1;  // 8MHz / 8k = 1kHz
-    ptr = (unsigned int *)(TIM6_BASE + TIM_ARR);
-    *ptr = 1000;
-    ptr = (unsigned int *)(TIM6_BASE + TIM_CNT);
-    *ptr = 0;
-    ptr = (unsigned int *)(TIM6_BASE + TIM_DIER);
-    *ptr = 1;
+    // Freq = SYS_CLOCK / (PSC + 1) = freq
+    // SYS_CLOCK / freq -1 = PSC
+    REG(TIM6_BASE | TIM_PSC) = 8000 - 1;  // Freq: 1kHz
+    REG(TIM6_BASE | TIM_ARR) = 1000;      // Freq: freq
+    REG(TIM6_BASE | TIM_CR1) |= 1 << 0;
 
-    // Moder
-    ptr = (unsigned int *)(GPIOE_BASE + GPIO_MODER);
-    *ptr |= 0x5555 << 16;
-    ptr = (unsigned int *)(GPIOA_BASE + GPIO_MODER);
-    *ptr |= 0;
+    int i = 0;
+    while (1) {
+        REG(GPIOE_BASE | GPIO_ODR) |= buffer[i] << 8;
 
-    // ADC
-    // Step 1: Voltage Regulator
-    ptr = (volatile unsigned int *)(ADCC12_BASE + ADCC_CCR);
-    *ptr |= (1 << 23) | (0b01 << 16);  // TSEN | CKMODE = 01
-    ptr = (volatile unsigned int *)(ADC1_BASE + ADC_CR);
-    *ptr &= ~(0b11 << 28);  // ADVREGEN = 0b00
-    *ptr |= 0b01 << 28;     // ADVREGEN = 0b10
-
-    // Wait 10us
-    // At 8MHz, 1 clock is 125ns,
-    // 10us is 80 clocks
-    // Thats a lot more of 80clocks
-    // Maybe use a timer??
-    for (volatile int i = 0; i < 80; i++) {
-        i = i;
-    }
-
-    // Step 2: Calibrate
-    // ADEN is 0
-    // ADCALDIF is 0
-    *ptr |= 0b1 << 31;  // ADCAL
-    for (;;) {
-        int adcal = (*ptr >> 31) & 0b1;
-        if (adcal == 0) break;
-    }
-
-    // ADCAL is 0
-
-    // Step 3: Enable ADC
-    *ptr |= 0b1 << 0;
-    // Wait ADRDY
-    ptr = (volatile unsigned int *)(ADC1_BASE + ADC_ISR);
-    for (;;) {
-        int adrdy = (*ptr >> 0) & 0b1;
-        if (adrdy == 1) break;
-    }
-
-    // ADRDY is 1
-
-    // Step 4: Select channel
-    // Temperature Sensor, ADC1_IN16
-    // Sequence
-    ptr = (unsigned int *)(ADC1_BASE + ADC_SQR1);
-    *ptr = (16 << 6) | (0 << 0);  // SQ1 = ADC1_IN16, L = 1
-    ptr = (unsigned int *)(ADC1_BASE + ADC_SMPR1);
-    *ptr = 0b101 << 3;
-    ptr = (unsigned int *)(ADC1_BASE + ADC_CFGR);
-    *ptr |= (0b00 << 3);  // 12bit
-
-    ptr = (unsigned int *)(TIM6_BASE + TIM_CR1);
-    *ptr |= (1 << 0);
-
-    for (;;) {
-        // Step 5: Start ADC
-        ptr = (unsigned int *)(ADC1_BASE + ADC_CR);
-        *ptr |= 0b1 << 2;
-
-        // Wait for finish
-        ptr = (volatile unsigned int *)(ADC1_BASE + ADC_ISR);
-        for (;;) {
-            int eoc = (*ptr >> 2) & 0b1;
-            if (eoc == 1) break;
+        while (1) {
+            int sr = REG(TIM6_BASE | TIM_SR);
+            if (sr != 0) break;
         }
-
-        ptr = (unsigned int *)(ADC1_BASE + ADC_DR);
-        int value = *ptr;
-
-        float v2i = 3.0 / 4096;
-        // Should it be 1000??
-        value = (1.43 - value * v2i) * 100 / 4.3 + 25;
-
-        ptr = (unsigned int *)(GPIOE_BASE + GPIO_ODR);
-        *ptr = value << 8;
-
-        ptr = (unsigned int *)(TIM6_BASE + TIM_SR);
-        while ((*ptr) == 0)
-            ;
-        *ptr = 0;
+        REG(TIM6_BASE | TIM_SR) = 1;
+        i++;
+        i %= 4096;
     }
 
     while (1)
