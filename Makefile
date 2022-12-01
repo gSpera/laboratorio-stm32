@@ -1,5 +1,5 @@
 ARM:=arm-none-eabi
-CFLAGS:=-O2 -g -mthumb -mtune=cortex-m4 -I Libreria
+CFLAGS:=-O2 -g -mthumb -mtune=cortex-m4 -I Libreria -fno-builtin
 LDFLAGS:= /usr/lib/gcc/arm-none-eabi/12.2.0/thumb/v6-m/nofp/libgcc.a
 OBJS:=main.o vector_table.o
 

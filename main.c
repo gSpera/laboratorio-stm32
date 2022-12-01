@@ -64,15 +64,21 @@ void generate_buffer() {
 
 int freq = 1000;  // 1kHz
 
-extern unsigned int DATA_START;
-extern unsigned int DATA_END;
-extern unsigned int DATA_LOAD_ADDR;
+extern const unsigned int DATA_START;
+extern const unsigned int DATA_LEN;
+extern const unsigned int DATA_LOAD_ADDR;
+
+volatile int something = 0;
 
 int main() {
+    while (something == 0)
+        ;
+
     // Copy .data from flash to ram
-    for (unsigned int addr = DATA_START; addr < DATA_END; addr++) {
-        unsigned int *ptr = (unsigned int *)(DATA_LOAD_ADDR + addr);
-        *ptr = *(unsigned int *)addr;
+    unsigned int *from = (unsigned int *)&DATA_LOAD_ADDR;
+    unsigned int *to = (unsigned int *)&DATA_START;
+    for (unsigned int i = 0; i < ((unsigned int)&DATA_LEN); i++) {
+        to[i] = from[i];
     }
 
     generate_buffer();

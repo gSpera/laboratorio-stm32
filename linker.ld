@@ -14,12 +14,13 @@ SECTIONS {
 		*(.rodata)
 	} > flash
 
-	DATA_START = .;
 	.data : {
+	DATA_START = .;
 		*(.data)
 		*(.data*)
-	} > ram AT> flash
 	DATA_END = .;
+	} > ram AT> flash
+	DATA_LEN = DATA_END - DATA_START;
 	DATA_LOAD_ADDR = LOADADDR(.data);
 
 
