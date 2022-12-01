@@ -89,9 +89,16 @@ void uart_putc(char ch) {
 }
 
 void uart_put_dec(int v) {
-    while (v > 0) {
-        uart_putc((v % 10) + '0');
+    char buff[10];
+    int n;
+    for (n = 0; n < 10; n++) {
+        buff[n] = (v % 10) + '0';
         v /= 10;
+        if (v == 0) break;
+    }
+
+    for (int i = n; i >= 0; i--) {
+        uart_putc(buff[i]);
     }
 }
 
@@ -106,11 +113,13 @@ int main() {
     // generate_buffer();
 
     // Clock
-    REG(RCC_BASE | RCC_AHBENR) |= (1 << 19) | (1 << 21);  // Port C | Port E
+    // ADC12|A|C|E
+    REG(RCC_BASE | RCC_AHBENR) |= (1 << 28) | (1 << 17) | (1 << 19) | (1 << 21);
     REG(RCC_BASE | RCC_APB1ENR) |= 1 << 4;
     REG(RCC_BASE | RCC_APB2ENR) |= 1 << 14;  // USART1
 
     // GPIO
+    REG(GPIOA_BASE | GPIO_MODER) |= (0b11 << 0);
     REG(GPIOC_BASE | GPIO_MODER) |= (0b10 << 8) | (0b10 << 10);
     REG(GPIOC_BASE | GPIO_AFRL) |= (0b0111 << 16) | (0b0111 << 20);
     REG(GPIOE_BASE | GPIO_MODER) |= 0x5555 << 16;
@@ -131,6 +140,42 @@ int main() {
     REG(TIM6_BASE | TIM_PSC) = 8000 - 1;  // Freq: 1kHz
     REG(TIM6_BASE | TIM_ARR) = 1000;      // Freq: freq
     REG(TIM6_BASE | TIM_CR1) |= 1 << 0;
+
+    // ADC
+    // Voltage Regulator
+    REG(ADCC12_BASE | ADCC_CCR) |=
+        (1 << 23) | (0b01 << 16);              // TSEN | CKMODE=01
+    REG(ADC1_BASE | ADC_CR) &= ~(0b11 << 28);  // ADVREGEN = 00
+    REG(ADC1_BASE | ADC_CR) |= (0b01 << 28);   // ADVREGEN = 01
+
+    // Wait 10us
+    for (volatile int i = 0; i < 80; i++) i = i;
+
+    // Calibrate
+    REG(ADC1_BASE | ADC_CR) |= 0b1 << 31;  // ADCAL
+    while (EXTRACT_BIT(REG(ADC1_BASE | ADC_CR), 31) == 1)
+        ;
+
+    // Enable ADC
+    REG(ADC1_BASE | ADC_CR) |= 0b1 << 0;
+    while (EXTRACT_BIT(REG(ADC1_BASE | ADC_ISR), 0) == 0)
+        ;
+
+    // Channel Selection
+    REG(ADC1_BASE | ADC_SQR1) = (1 << 6) | (0 << 0);  // SQ1=ADC1_IN1, L=1
+    REG(ADC1_BASE | ADC_SMPR1) = 0b101 << 3;          // Sample Time
+    REG(ADC1_BASE | ADC_CFGR) |= 0b00 << 3;           // 12 Bit
+
+    while (1) {
+        // ADC Start
+        REG(ADC1_BASE | ADC_CR) |= 0b1 << 2;
+
+        while (EXTRACT_BIT(REG(ADC1_BASE | ADC_ISR), 2) == 0)
+            ;
+        int value = REG(ADC1_BASE | ADC_DR);
+        uart_put_dec(value);
+        uart_putc('\n');
+    }
 
     while (1)
         ;
