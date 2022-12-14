@@ -43,9 +43,30 @@
 #define USART_RDR 0x24
 #define USART_TDR 0x28
 
-#define SYS_CLK 8000000  // 8MHz
-#define BAUD_RATE 9600
+#define DMA1_BASE 0x0
+#define DMA_ISR 0x0
+#define DMA_IFCR 0x4
+#define DMA_CCR(X) (0x08 + 20 * (X)-1)
+#define DMA_CNDTR(X) (0x0C + 20 * (X)-1)
+#define DMA_CPAR(X) (0x10 + 20 * (X)-1)
+#define DMA_CMAR(X) (0x14 + 20 * (X) -1)
 
+#define EXTI_BASE 0x40010400
+#define EXTI_IMR1 0x00
+#define EXTI_RTSR1 0x08
+#define EXTI_FTSR1 0x0C
+#define EXTI_SWIER1 0x10
+#define EXTI_PR1 0x14
+
+#define SYS_CLK 8000000  // 8MHz
+#define BAUD_RATE 115200
+
+void uart_puts(const char *);
+int leds = 0;
+void isr_exti0() {
+	uart_puts("EXTI\n");
+	REG(EXTI_BASE | EXTI_PR1) = (1<<0);
+}
 void isr_tim6dacunder() {}
 
 #define BUFFER_SIZE 256
@@ -88,6 +109,12 @@ void uart_putc(char ch) {
     REG(USART1_BASE | USART_TDR) = ch;
 }
 
+void uart_puts(const char *str) {
+	for (int i=0;str[i]!='\0';i++) {
+		uart_putc(str[i]);
+	}
+}
+
 void uart_put_dec(int v) {
     char buff[10];
     int n;
@@ -113,13 +140,13 @@ int main() {
     // generate_buffer();
 
     // Clock
-    // ADC12|A|C|E
-    REG(RCC_BASE | RCC_AHBENR) |= (1 << 28) | (1 << 17) | (1 << 19) | (1 << 21);
+    // A|C|E
+    REG(RCC_BASE | RCC_AHBENR) |= (1 << 17) | (1 << 19) | (1 << 21);
     REG(RCC_BASE | RCC_APB1ENR) |= 1 << 4;
     REG(RCC_BASE | RCC_APB2ENR) |= 1 << 14;  // USART1
 
     // GPIO
-    REG(GPIOA_BASE | GPIO_MODER) |= (0b11 << 0);
+    REG(GPIOA_BASE | GPIO_MODER) |= (0b00 << 0);
     REG(GPIOC_BASE | GPIO_MODER) |= (0b10 << 8) | (0b10 << 10);
     REG(GPIOC_BASE | GPIO_AFRL) |= (0b0111 << 16) | (0b0111 << 20);
     REG(GPIOE_BASE | GPIO_MODER) |= 0x5555 << 16;
@@ -141,41 +168,11 @@ int main() {
     REG(TIM6_BASE | TIM_ARR) = 1000;      // Freq: freq
     REG(TIM6_BASE | TIM_CR1) |= 1 << 0;
 
-    // ADC
-    // Voltage Regulator
-    REG(ADCC12_BASE | ADCC_CCR) |=
-        (1 << 23) | (0b01 << 16);              // TSEN | CKMODE=01
-    REG(ADC1_BASE | ADC_CR) &= ~(0b11 << 28);  // ADVREGEN = 00
-    REG(ADC1_BASE | ADC_CR) |= (0b01 << 28);   // ADVREGEN = 01
-
-    // Wait 10us
-    for (volatile int i = 0; i < 80; i++) i = i;
-
-    // Calibrate
-    REG(ADC1_BASE | ADC_CR) |= 0b1 << 31;  // ADCAL
-    while (EXTRACT_BIT(REG(ADC1_BASE | ADC_CR), 31) == 1)
-        ;
-
-    // Enable ADC
-    REG(ADC1_BASE | ADC_CR) |= 0b1 << 0;
-    while (EXTRACT_BIT(REG(ADC1_BASE | ADC_ISR), 0) == 0)
-        ;
-
-    // Channel Selection
-    REG(ADC1_BASE | ADC_SQR1) = (1 << 6) | (0 << 0);  // SQ1=ADC1_IN1, L=1
-    REG(ADC1_BASE | ADC_SMPR1) = 0b101 << 3;          // Sample Time
-    REG(ADC1_BASE | ADC_CFGR) |= 0b00 << 3;           // 12 Bit
-
-    while (1) {
-        // ADC Start
-        REG(ADC1_BASE | ADC_CR) |= 0b1 << 2;
-
-        while (EXTRACT_BIT(REG(ADC1_BASE | ADC_ISR), 2) == 0)
-            ;
-        int value = REG(ADC1_BASE | ADC_DR);
-        uart_put_dec(value);
-        uart_putc('\n');
-    }
+    //EXTI
+    REG(NVIC_BASE + NVIC_ISER) |= (1<<6);
+    REG(EXTI_BASE | EXTI_IMR1) |= (1<<0);
+    REG(EXTI_BASE | EXTI_RTSR1) |= (1<<0);
+    REG(EXTI_BASE | EXTI_FTSR1) |= (1<<0);
 
     while (1)
         ;
