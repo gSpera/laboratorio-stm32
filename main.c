@@ -168,7 +168,7 @@ int main() {
     REG(TIM6_BASE | TIM_ARR) = 1000;      // Freq: freq
     REG(TIM6_BASE | TIM_CR1) |= 1 << 0;
 
-    //EXTI
+    //EXIT
     REG(NVIC_BASE + NVIC_ISER) |= (1<<6);
     REG(EXTI_BASE | EXTI_IMR1) |= (1<<0);
     REG(EXTI_BASE | EXTI_RTSR1) |= (1<<0);
